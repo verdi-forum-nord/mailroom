@@ -1698,4 +1698,53 @@ defmodule Mailroom.IMAPTest do
                debug: @debug
              )
   end
+
+  test "FETCH with IMAP literal in ENVELOPE address (no space before {)" do
+    server = TestServer.start(ssl: true)
+
+    TestServer.expect(server, fn expectations ->
+      expectations
+      |> TestServer.tagged(:connect, "* OK IMAP ready\r\n")
+      |> TestServer.tagged("LOGIN \"test@example.com\" \"P@55w0rD\"\r\n", [
+        "* CAPABILITY (IMAPrev4)\r\n",
+        "OK test@example.com authenticated (Success)\r\n"
+      ])
+      |> TestServer.tagged("SELECT INBOX\r\n", [
+        "* FLAGS (\\Flagged \\Draft \\Deleted \\Seen)\r\n",
+        "* OK [PERMANENTFLAGS (\\Flagged \\Draft \\Deleted \\Seen \\*)] Flags permitted\r\n",
+        "* 2 EXISTS\r\n",
+        "* 1 RECENT\r\n",
+        "OK [READ-WRITE] INBOX selected. (Success)\r\n"
+      ])
+      |> TestServer.tagged("FETCH 1 (ENVELOPE)\r\n", [
+        "* 1 FETCH (ENVELOPE (\"Tue, 10 Mar 2026 14:54:44 +0000\" \"FW: Invoices\" (({21}\r\nJane  Doe - ACME Corp NIL \"j.doe\" \"acme-example.ch\")) ((\"app-test@messaging.test-system.net\" NIL \"app-test\" \"messaging.test-system.net\")) ((\"app-test@messaging.test-system.net\" NIL \"app-test\" \"messaging.test-system.net\")) ((\"app-test@messaging.test-system.net\" NIL \"app-test\" \"messaging.test-system.net\")) NIL NIL \"<ref-id@outlook.com>\" \"<msg-id@outlook.com>\"))\r\n",
+        "OK Success\r\n"
+      ])
+      |> TestServer.tagged("LOGOUT\r\n", [
+        "* BYE We're out of here\r\n",
+        "OK Logged out\r\n"
+      ])
+    end)
+
+    assert {:ok, client} =
+             IMAP.connect(server.address, "test@example.com", "P@55w0rD",
+               port: server.port,
+               ssl: true,
+               ssl_opts: [verify: :verify_none],
+               debug: @debug
+             )
+
+    {:ok, msgs} =
+      client
+      |> IMAP.select(:inbox)
+      |> IMAP.fetch(1, :envelope)
+
+    assert [{1, %{envelope: %Mailroom.IMAP.Envelope{} = envelope}}] = msgs
+    assert envelope.subject == "FW: Invoices"
+
+    assert [%{email: "j.doe@acme-example.ch", name: "Jane  Doe - ACME Corp"}] =
+             envelope.from
+
+    IMAP.logout(client)
+  end
 end

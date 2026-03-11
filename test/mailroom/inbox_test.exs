@@ -753,4 +753,100 @@ defmodule Mailroom.InboxTest do
       TestMailRouterWithUid.close(pid)
     end)
   end
+
+  defmodule TestMailRouterWithEnvelopeError do
+    use Mailroom.Inbox, fetch_uid: true
+
+    def config(opts) do
+      Keyword.merge(opts, username: "test@example.com", password: "P@55w0rD")
+    end
+
+    match do
+      all
+
+      process(TestMailProcessor, :match_all)
+    end
+
+    def on_envelope_error(msg_id, response, assigns) do
+      pid = assigns.test_pid
+      send(pid, {:envelope_error, msg_id, response})
+    end
+  end
+
+  test "on_envelope_error callback is invoked when envelope parsing fails" do
+    server = TestServer.start(ssl: true)
+
+    TestServer.expect(server, fn expectations ->
+      expectations
+      |> TestServer.tagged(:connect, "* OK IMAP ready\r\n")
+      |> TestServer.tagged("LOGIN \"test@example.com\" \"P@55w0rD\"\r\n", [
+        "* CAPABILITY (IMAPrev4)\r\n",
+        "OK test@example.com authenticated (Success)\r\n"
+      ])
+      |> TestServer.tagged("SELECT INBOX\r\n", [
+        "* FLAGS (\\Flagged \\Draft \\Deleted \\Seen)\r\n",
+        "* OK [PERMANENTFLAGS (\\Flagged \\Draft \\Deleted \\Seen \\*)] Flags permitted\r\n",
+        "* 0 EXISTS\r\n",
+        "* 0 RECENT\r\n",
+        "OK [READ-WRITE] INBOX selected. (Success)\r\n"
+      ])
+      |> TestServer.tagged("IDLE\r\n", [
+        "+ idling\r\n",
+        "* 2 EXISTS\r\n"
+      ])
+      |> TestServer.tagged("DONE\r\n", [
+        "OK IDLE terminated\r\n"
+      ])
+      |> TestServer.tagged("SEARCH UNSEEN\r\n", [
+        "* SEARCH 1 2\r\n",
+        "OK Success\r\n"
+      ])
+      |> TestServer.tagged("FETCH 1:2 (UID ENVELOPE)\r\n", [
+        "* 1 FETCH (UID 1 ENVELOPE (\"bad\" \"envelope\"))\r\n",
+        "* 2 FETCH (UID 2 ENVELOPE (\"Wed, 26 Oct 2016 14:23:14 +0200\" \"Normal email\" ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"Bob Jones\" NIL \"bob\" \"example.com\")) ((\"John Doe\" NIL \"john\" \"example.com\")) NIL NIL NIL \"<msg-id@example.com>\"))\r\n",
+        "OK Success\r\n"
+      ])
+      |> TestServer.tagged("STORE 1 +FLAGS (\\Seen)\r\n", [
+        "* 1 FETCH (FLAGS (\\Seen))\r\n",
+        "OK Store completed\r\n"
+      ])
+      |> TestServer.tagged("STORE 2 +FLAGS (\\Deleted)\r\n", [
+        "* 2 FETCH (FLAGS (\\Deleted))\r\n",
+        "OK Store completed\r\n"
+      ])
+      |> TestServer.tagged("EXPUNGE\r\n", [
+        "* 2 EXPUNGE\r\n",
+        "OK Expunge completed\r\n"
+      ])
+      |> TestServer.tagged("IDLE\r\n", [
+        "+ idling\r\n"
+      ])
+      |> TestServer.tagged("DONE\r\n", [
+        "OK IDLE terminated\r\n"
+      ])
+      |> TestServer.tagged("LOGOUT\r\n", [
+        "* BYE We're out of here\r\n",
+        "OK Logged out\r\n"
+      ])
+    end)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        {:ok, pid} =
+          TestMailRouterWithEnvelopeError.start_link(
+            server: server.address,
+            port: server.port,
+            ssl: true,
+            ssl_opts: [verify: :verify_none],
+            assigns: %{test_pid: self()},
+            debug: @debug
+          )
+
+        assert_receive({:envelope_error, 1, %{uid: 1, envelope: :error}})
+        assert_receive({:match_all, 2})
+        TestMailRouterWithEnvelopeError.close(pid)
+      end)
+
+    assert log =~ "Unable to process envelope"
+  end
 end

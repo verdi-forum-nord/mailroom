@@ -189,4 +189,44 @@ defmodule Mailroom.IMAP.UtilsTest do
   test "parse_timestamp/1" do
     assert parse_timestamp("21-Jun-2018 17:51:47 +0000") == ~U"2018-06-21 17:51:47Z"
   end
+
+  describe "parse_list/1 with IMAP literals" do
+    test "with literal string containing full content" do
+      assert parse_list("(name {5}\r\nhello rest)") == {["name", "hello", "rest"], ""}
+    end
+
+    test "with literal string in nested ENVELOPE address structure" do
+      envelope_sender = "(({23}\r\nJohn  Doe - Company Inc NIL \"user\" \"example.com\"))"
+      {result, _rest} = parse_list(envelope_sender)
+      assert result == [["John  Doe - Company Inc", nil, "user", "example.com"]]
+    end
+
+    test "with literal string where content is truncated" do
+      import ExUnit.CaptureLog
+
+      log =
+        capture_log(fn ->
+          assert {[[]], ""} = parse_list("(({23}\r\n")
+        end)
+
+      assert log =~ "parse_list: expected literal of size 23"
+    end
+
+    test "with literal string where content is partially present" do
+      import ExUnit.CaptureLog
+
+      log =
+        capture_log(fn ->
+          assert {[[], "John", "Doe"], ""} = parse_list("(({23}\r\nJohn  Doe ")
+        end)
+
+      assert log =~ "parse_list: expected literal of size 23"
+    end
+  end
+
+  describe "parse_list/1 with empty binary" do
+    test "returns accumulated result" do
+      assert parse_list("") == {[], ""}
+    end
+  end
 end

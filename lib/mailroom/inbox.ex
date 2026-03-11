@@ -124,7 +124,9 @@ defmodule Mailroom.Inbox do
         IMAP.idle(client, self(), :idle_notify)
       end
 
-      defoverridable config: 1
+      def on_envelope_error(_msg_id, _response, _assigns), do: :ok
+
+      defoverridable config: 1, on_envelope_error: 3
     end
   end
 
@@ -218,6 +220,7 @@ defmodule Mailroom.Inbox do
                   "Unable to process envelope #{inspect(response)}"
                 end)
 
+                on_envelope_error(msg_id, response, assigns)
                 Mailroom.IMAP.add_flags(client, msg_id, [:seen])
 
               mail_info ->

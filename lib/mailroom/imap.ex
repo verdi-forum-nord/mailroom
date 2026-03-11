@@ -550,7 +550,7 @@ defmodule Mailroom.IMAP do
   end
 
   defp process_fetch_data(data, state) do
-    case Regex.run(~r/\A(.+ {(\d+)}\r\n)\z/sm, data) do
+    case Regex.run(~r/\A(.+{(\d+)}\r\n)\z/sm, data) do
       [_, initial, bytes] ->
         data = fetch_all_data(String.to_integer(bytes), 0, [initial], state)
         process_fetch_data(data, state)
