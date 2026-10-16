@@ -893,7 +893,8 @@ defmodule Mailroom.IMAP do
     }
   end
 
-  defp uid_command([command | _] = message, :uid) when command in ["FETCH", "SEARCH", "STORE"] do
+  defp uid_command([command | _] = message, :uid)
+       when command in ["FETCH", "SEARCH", "STORE", "COPY"] do
     ["UID " | message]
   end
 

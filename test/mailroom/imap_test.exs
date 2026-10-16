@@ -1549,6 +1549,49 @@ defmodule Mailroom.IMAPTest do
     IMAP.logout(client)
   end
 
+  test "UID COPY" do
+    server = TestServer.start(ssl: true)
+
+    TestServer.expect(server, fn expectations ->
+      expectations
+      |> TestServer.tagged(:connect, "* OK IMAP ready\r\n")
+      |> TestServer.tagged("LOGIN \"test@example.com\" \"P@55w0rD\"\r\n", [
+        "* CAPABILITY (IMAPrev4)\r\n",
+        "OK test@example.com authenticated (Success)\r\n"
+      ])
+      |> TestServer.tagged("SELECT INBOX\r\n", [
+        "* FLAGS (\\Flagged \\Draft \\Deleted \\Seen)\r\n",
+        "* OK [PERMANENTFLAGS (\\Flagged \\Draft \\Deleted \\Seen \\*)] Flags permitted\r\n",
+        "* 2 EXISTS\r\n",
+        "* 1 RECENT\r\n",
+        "OK [READ-WRITE] INBOX selected. (Success)\r\n"
+      ])
+      |> TestServer.tagged("UID COPY 46 \"Archive\"\r\n", [
+        "OK [COPYUID 1474976037 46 12] Copy completed\r\n"
+      ])
+      |> TestServer.tagged("LOGOUT\r\n", [
+        "* BYE We're out of here\r\n",
+        "OK Logged out\r\n"
+      ])
+    end)
+
+    assert {:ok, client} =
+             IMAP.connect(server.address, "test@example.com", "P@55w0rD",
+               port: server.port,
+               ssl: true,
+               ssl_opts: [verify: :verify_none],
+               debug: @debug
+             )
+
+    assert client ==
+             client
+             |> IMAP.select(:inbox)
+             |> IMAP.mode(:uid)
+             |> IMAP.copy(46, "Archive")
+
+    IMAP.logout(client)
+  end
+
   test "EXPUNGE" do
     server = TestServer.start(ssl: true)
 
