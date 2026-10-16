@@ -54,8 +54,7 @@ defmodule Mailroom.Mixfile do
       # DEV
       {:credo, "~> 1.0", only: :dev},
       # Docs
-      {:ex_doc, "~> 0.14", only: [:dev, :docs]},
-      {:earmark, "~> 1.0", only: [:dev, :docs]}
+      {:ex_doc, "~> 0.14", only: [:dev, :docs]}
     ]
   end
 
