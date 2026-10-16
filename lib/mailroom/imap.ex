@@ -207,19 +207,24 @@ defmodule Mailroom.IMAP do
   end
 
   def remove_flags(pid, number_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:remove_flags, number_or_range, flags, opts}) && pid
+    do: GenServer.call(pid, {:remove_flags, number_or_range, flags, opts}) |> ok!(pid, "STORE")
 
   def add_flags(pid, number_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:add_flags, number_or_range, flags, opts}) && pid
+    do: GenServer.call(pid, {:add_flags, number_or_range, flags, opts}) |> ok!(pid, "STORE")
 
   def set_flags(pid, number_or_range, flags, opts \\ []),
-    do: GenServer.call(pid, {:set_flags, number_or_range, flags, opts}) && pid
+    do: GenServer.call(pid, {:set_flags, number_or_range, flags, opts}) |> ok!(pid, "STORE")
 
   def copy(pid, sequence, mailbox_name),
-    do: GenServer.call(pid, {:copy, sequence, mailbox_name}) && pid
+    do: GenServer.call(pid, {:copy, sequence, mailbox_name}) |> ok!(pid, "COPY")
 
   def expunge(pid),
-    do: GenServer.call(pid, :expunge) && pid
+    do: GenServer.call(pid, :expunge) |> ok!(pid, "EXPUNGE")
+
+  defp ok!({:ok, _}, pid, _command), do: pid
+
+  defp ok!({:error, reason}, _pid, command),
+    do: raise(Mailroom.IMAP.CommandError, command: command, reason: reason)
 
   @doc ~S"""
   ## Options

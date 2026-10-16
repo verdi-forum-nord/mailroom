@@ -1592,6 +1592,49 @@ defmodule Mailroom.IMAPTest do
     IMAP.logout(client)
   end
 
+  test "COPY raises when the server answers NO" do
+    server = TestServer.start(ssl: true)
+
+    TestServer.expect(server, fn expectations ->
+      expectations
+      |> TestServer.tagged(:connect, "* OK IMAP ready\r\n")
+      |> TestServer.tagged("LOGIN \"test@example.com\" \"P@55w0rD\"\r\n", [
+        "* CAPABILITY (IMAPrev4)\r\n",
+        "OK test@example.com authenticated (Success)\r\n"
+      ])
+      |> TestServer.tagged("SELECT INBOX\r\n", [
+        "* FLAGS (\\Flagged \\Draft \\Deleted \\Seen)\r\n",
+        "* OK [PERMANENTFLAGS (\\Flagged \\Draft \\Deleted \\Seen \\*)] Flags permitted\r\n",
+        "* 2 EXISTS\r\n",
+        "* 1 RECENT\r\n",
+        "OK [READ-WRITE] INBOX selected. (Success)\r\n"
+      ])
+      |> TestServer.tagged("COPY 1 \"Missing\"\r\n", [
+        "NO [TRYCREATE] Mailbox doesn't exist: Missing\r\n"
+      ])
+      |> TestServer.tagged("LOGOUT\r\n", [
+        "* BYE We're out of here\r\n",
+        "OK Logged out\r\n"
+      ])
+    end)
+
+    assert {:ok, client} =
+             IMAP.connect(server.address, "test@example.com", "P@55w0rD",
+               port: server.port,
+               ssl: true,
+               ssl_opts: [verify: :verify_none],
+               debug: @debug
+             )
+
+    IMAP.select(client, :inbox)
+
+    assert_raise Mailroom.IMAP.CommandError, ~r/IMAP COPY failed: .*Missing/, fn ->
+      IMAP.copy(client, 1, "Missing")
+    end
+
+    IMAP.logout(client)
+  end
+
   test "EXPUNGE" do
     server = TestServer.start(ssl: true)
 
